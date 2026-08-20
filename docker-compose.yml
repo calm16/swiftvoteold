@@ -1,0 +1,291 @@
+name: swiftvotes-microservices
+
+networks:
+  swiftvotes-net:
+    driver: bridge
+
+services:
+  auth-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: swiftvotes
+      POSTGRES_PASSWORD: swiftvotes
+    ports: ["5441:5432"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swiftvotes -d authdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  event-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: eventdb
+      POSTGRES_USER: swiftvotes
+      POSTGRES_PASSWORD: swiftvotes
+    ports: ["5442:5432"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swiftvotes -d eventdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  contestant-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: contestantdb
+      POSTGRES_USER: swiftvotes
+      POSTGRES_PASSWORD: swiftvotes
+    ports: ["5443:5432"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swiftvotes -d contestantdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  voting-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: votingdb
+      POSTGRES_USER: swiftvotes
+      POSTGRES_PASSWORD: swiftvotes
+    ports: ["5444:5432"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swiftvotes -d votingdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payment-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: swiftvotes
+      POSTGRES_PASSWORD: swiftvotes
+    ports: ["5445:5432"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swiftvotes -d paymentdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks: [swiftvotes-net]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on: [zookeeper]
+    ports: ["29092:29092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks: [swiftvotes-net]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports: ["5672:5672", "15672:15672"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  eureka-server:
+    build:
+      context: ./backend
+      dockerfile: eureka-server/Dockerfile
+    ports: ["8761:8761"]
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  config-server:
+    build:
+      context: ./backend
+      dockerfile: config-server/Dockerfile
+    ports: ["8888:8888"]
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+    networks: [swiftvotes-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: api-gateway/Dockerfile
+    ports: ["8080:8080"]
+    depends_on:
+      config-server:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+    networks: [swiftvotes-net]
+
+  auth-service:
+    build:
+      context: ./backend
+      dockerfile: auth-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      auth-db:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-db:5432/authdb
+      SPRING_DATASOURCE_USERNAME: swiftvotes
+      SPRING_DATASOURCE_PASSWORD: swiftvotes
+    networks: [swiftvotes-net]
+
+  event-service:
+    build:
+      context: ./backend
+      dockerfile: event-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      event-db:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_DATASOURCE_URL: jdbc:postgresql://event-db:5432/eventdb
+      SPRING_DATASOURCE_USERNAME: swiftvotes
+      SPRING_DATASOURCE_PASSWORD: swiftvotes
+    networks: [swiftvotes-net]
+
+  contestant-service:
+    build:
+      context: ./backend
+      dockerfile: contestant-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      contestant-db:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_DATASOURCE_URL: jdbc:postgresql://contestant-db:5432/contestantdb
+      SPRING_DATASOURCE_USERNAME: swiftvotes
+      SPRING_DATASOURCE_PASSWORD: swiftvotes
+    networks: [swiftvotes-net]
+
+  voting-service:
+    build:
+      context: ./backend
+      dockerfile: voting-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      voting-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_DATASOURCE_URL: jdbc:postgresql://voting-db:5432/votingdb
+      SPRING_DATASOURCE_USERNAME: swiftvotes
+      SPRING_DATASOURCE_PASSWORD: swiftvotes
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RABBITMQ_HOST: rabbitmq
+    networks: [swiftvotes-net]
+
+  payment-service:
+    build:
+      context: ./backend
+      dockerfile: payment-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/paymentdb
+      SPRING_DATASOURCE_USERNAME: swiftvotes
+      SPRING_DATASOURCE_PASSWORD: swiftvotes
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RABBITMQ_HOST: rabbitmq
+    networks: [swiftvotes-net]
+
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: notification-service/Dockerfile
+    depends_on:
+      config-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+      CONFIG_SERVER_URL: http://config-server:8888
+      RABBITMQ_HOST: rabbitmq
+    networks: [swiftvotes-net]
+
+  shell:
+    build:
+      context: ./frontend/shell
+    ports: ["5000:80"]
+    networks: [swiftvotes-net]
+
+  auth-mfe:
+    build:
+      context: ./frontend/auth-mfe
+    ports: ["5001:80"]
+    networks: [swiftvotes-net]
+
+  events-mfe:
+    build:
+      context: ./frontend/events-mfe
+    ports: ["5002:80"]
+    networks: [swiftvotes-net]
+
+  contestants-mfe:
+    build:
+      context: ./frontend/contestants-mfe
+    ports: ["5003:80"]
+    networks: [swiftvotes-net]
+
+  voting-mfe:
+    build:
+      context: ./frontend/voting-mfe
+    ports: ["5004:80"]
+    networks: [swiftvotes-net]

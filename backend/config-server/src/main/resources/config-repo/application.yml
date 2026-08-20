@@ -1,0 +1,12 @@
+jwt:
+  secret: c3dpZnR2b3Rlcy1kdW1teS1kZW1vLXNlY3JldC1kby1ub3QtdXNlLWluLXByb2R1Y3Rpb24tMTIzNDU2Nzg=
+  expiration-ms: 3600000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,21 @@
+resilience4j:
+  circuitbreaker:
+    instances:
+      eventService:
+        slidingWindowSize: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+      contestantService:
+        slidingWindowSize: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+  retry:
+    instances:
+      eventService:
+        maxAttempts: 3
+        waitDuration: 500ms
+      contestantService:
+        maxAttempts: 3
+        waitDuration: 500ms
